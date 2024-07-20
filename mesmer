@@ -1,0 +1,385 @@
+#!/bin/sh
+# shellcheck disable=SC2059
+
+# declare -ri true=1
+# declare -ri false=0
+declare scriptName="$(basename ${0})"
+
+########################################
+##### Defaults: change as per your need
+########################################
+# projectName is set later below using meson_extract_project_name()
+declare projectName
+declare buildDir="build"
+declare projectDir
+projectDir="$(pwd)"
+declare mesonFile="meson.build"
+declare -i debugLvl="$debugQuiet"
+
+# By default keep program quiet
+declare -i debugQuiet=0
+declare -i debugErrorExclusive=1
+declare -i debugError=2
+declare -i debugInfo=3
+
+declare colorNone='\033[0m'
+declare colorRed='\033[1;31m'
+declare colorGreen='\033[1;32m'
+
+# extracts first name of function supplied
+meson_extract_first_arg() {
+    declare file="$1"
+    declare func="$2"
+    # criteria to select single line from multiple lines selected by grep
+    declare criteria_select_line="$3"
+
+    declare all_func_lines
+    declare func_line
+    declare sed_pattern
+    declare first_arg
+
+    all_func_lines=$(grep "^[[:space:]]*${func}[[:space:]]*(" "$file")
+    func_line=$(printf "%s" "${all_func_lines}" | ${criteria_select_line})
+    sed_pattern="^[[:space:]]*${func}[[:space:]]*([[:space:]]*\([^,]*\)[[:space:]]*,.*"
+    first_arg=$(printf "%s" "${func_line}" | sed "s/${sed_pattern}/\1/")
+    printf "%s" "${first_arg}"
+}
+
+meson_extract_var_value() {
+    declare file="$1"
+    declare var="$2"
+    # criteria to select single line from multiple lines selected by grep
+    declare criteria_select_line="$3"
+
+    declare all_var_lines
+    declare var_line
+    declare sed_pattern
+    declare var_value
+
+    all_var_lines=$(grep "^[[:space:]]*${var}[[:space:]]*=.*'" "$file")
+    var_line=$(printf "%s" "${all_var_lines}" | ${criteria_select_line})
+    echo "$var_line"
+    sed_pattern="^[[:space:]]*${var}[[:space:]]*=[[:space:]]*\(.*\)[[:space:]]*$"
+    var_value=$(printf "%s" "${var_line}" | sed "s/${sed_pattern}/\1/")
+    printf "%s" "${var_value}"
+}
+
+meson_remove_single_quotes() {
+    declare query_with_quotes="$1"
+    declare query
+
+    query=$(printf "%s" "${query_with_quotes}" | sed "s/'\(.*\)'/\1/")
+    printf "%s" "${query}"
+}
+
+# Function to extract project name
+meson_extract_project_name() {
+    declare file="$1"
+    declare project_name
+
+    declare var_name
+    declare var_value
+    declare project_first_arg
+    declare executable_first_arg
+
+    # last excutable(...) line in meson.build
+    executable_first_arg=$(meson_extract_first_arg "$file" "executable" "tail -n 1")
+
+    case "$executable_first_arg" in
+
+    "'"*)
+        project_name=$(meson_remove_single_quotes "$executable_first_arg")
+        ;;
+    "meson.project_name("*")")
+        project_first_arg=$(meson_extract_first_arg "$file" "project" "head -n 1")
+        project_name=$(meson_remove_single_quotes "$project_first_arg")
+        ;;
+    *)
+        var_name="$executable_first_arg"
+        var_value=$(meson_extract_var_value "$file" "$var_name" "tail -n 1")
+        project_name=$(meson_remove_single_quotes "$var_value")
+        ;;
+
+    esac
+
+    printf "%s" "$project_name"
+}
+
+checkDebug() {
+    declare command_lvl
+    declare command
+
+    case "$1" in
+    -l | --level)
+        command_lvl=${2}
+        shift
+        shift
+        ;;
+    *) command_lvl="${debugError}" ;;
+    esac
+
+    command="$1"
+    shift
+
+    case "$command_lvl" in
+    "$debugInfo")
+        # Following applies till debugLvl >= debugInfo (Highest):
+        #   Only stdout channel access allowed and stderr redirected to stdout
+        case "$debugLvl" in
+        "$debugInfo") ${command} "$@" 2>&1 ;;
+        "$debugError" | "$debugQuiet") ${command} "$@" >/dev/null 2>/dev/null ;;
+        *) printf "${colorRed}Error:${colorNone} checkDebug: command debug level not supported\n" ;;
+        esac
+        ;;
+    "$debugErrorExclusive")
+        # Following applies till debugLvl >= debugError:
+        #   Only stderr channel access allowed and stdout redirected to stderr
+        case "$debugLvl" in
+        "$debugInfo" | "$debugError") ${command} "$@" 1>&2 ;;
+        "$debugQuiet") ${command} "$@" 1>/dev/null 2>&1 ;;
+        *) printf "${colorRed}Error:${colorNone} checkDebug: command debug level not supported\n" ;;
+        esac
+        ;;
+    "$debugError")
+        # Following applies till debugLvl >= debugInfo:
+        #   All channel access allowed
+        # Following applies till debugLvl >= debugError:
+        #   Only stderr channel access allowed
+        case "$debugLvl" in
+        "$debugInfo") ${command} "$@" ;;
+        "$debugError") ${command} "$@" 1>/dev/null ;;
+        "$debugQuiet") ${command} "$@" 1>/dev/null 2>&1 ;;
+        *) printf "${colorRed}Error:${colorNone} checkDebug: command debug level not supported\n" ;;
+        esac
+        ;;
+    "$debugQuiet")
+        # Following applies till debugLvl >= debugQuiet (Lowest):
+        #   All channel access allowed
+        case "$debugLvl" in
+        "$debugInfo" | "$debugError" | "$debugQuiet") ${command} "$@" ;;
+        *) printf "${colorRed}Error:${colorNone} checkDebug: command debug level not supported\n" ;;
+        esac
+        ;;
+    *) printf "${colorRed}Error:${colorNone} checkDebug: debug level not supported\n" ;;
+    esac
+
+}
+
+info() {
+    checkDebug -l "$debugInfo" printf "${colorGreen}Info:${colorNone} $* \n"
+}
+
+infoHigh() {
+    checkDebug -l "$debugQuiet" printf "${colorGreen}Info:${colorNone} $* \n"
+}
+
+error() {
+    checkDebug -l "$debugErrorExclusive" printf "${colorRed}Error:${colorNone} $* \n"
+}
+
+errorHigh() {
+    checkDebug -l "$debugQuiet" printf "${colorRed}Error:${colorNone} $* \n"
+}
+
+# All channels allowed till debugLvl >= debugError
+# i.e., no output on debuglvl <= debugQuiet
+runCmd() {
+    checkDebug -l "$debugError" "$@"
+}
+
+# All channels allowed
+runCmdVerbose() {
+    checkDebug -l "$debugQuiet" "$@"
+}
+
+init() {
+    declare build_dir="${1:-${buildDir}}"
+
+    info 'initialization started'
+    runCmd meson setup "${build_dir}"
+    info 'initialization finised'
+}
+
+build() {
+    declare build_dir="${1:-${buildDir}}"
+
+    info 'build started'
+    runCmd meson compile -C "${build_dir}"
+    info 'build finished'
+}
+
+runProject() {
+    declare build_dir="${1:-${buildDir}}"
+
+    info "running ${projectName}"
+    runCmd "${projectDir}/${build_dir}/${projectName}"
+    info "${projectName} run complete"
+}
+
+removeBuild() {
+    declare build_dir="${1:-${buildDir}}"
+
+    infoHigh "removing dir: ${projectDir:?}/${build_dir}"
+
+    if [ "$debugLvl" -le "$debugQuiet" ]; then
+        rm -rI "${projectDir:?}/${build_dir}"
+    else
+        rm -rvI "${projectDir:?}/${build_dir}"
+    fi
+
+    infoHigh "removed dir: ${projectDir:?}/${build_dir}"
+}
+
+reinit() {
+    removeBuild "$@"
+    init "$@"
+}
+
+run() {
+    build "$@"
+    runProject "$@"
+}
+
+help() {
+    declare help_text
+
+    help_text="
+Usage: ${scriptName} [options] [subcommand] [buildDir]
+
+Subcommands:
+
+    in | init   : meson setup [buildDir]
+    bd | build  : run meson compile in [buildDir]
+    rm | remove : remove [buildDir]
+    re | reinit : remove build dir and run meson setup [buildDir]
+    ex | exname : find name of executable from meson.build
+    rn | run    : build and run the binary generated by meson
+
+Options:
+
+    -d | --debug   : show debug info, by this flag ${scriptName} is quiet
+        ${scriptName} -d [buildDirName]
+        ${scriptName} -d error [buildDirName]
+
+        available : info, error
+        default   : info 
+
+    -i | --install : install the script in $HOME/.local/bin
+    -h | --help    : show this help page
+"
+
+    echo "$help_text"
+}
+
+parseSubCommand() {
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+        -d | --debug)
+            case "$2" in
+            error | info) shift ;;
+            esac
+            shift
+            ;;
+        -*) shift ;;
+        *) break ;;
+        esac
+    done
+
+    case "$1" in
+    rn | run)
+        shift
+        run "$@"
+        ;;
+    bd | build)
+        shift
+        build "$@"
+        ;;
+    rm | remove)
+        shift
+        removeBuild "$@"
+        ;;
+    in | init)
+        shift
+        init "$@"
+        ;;
+    re | reinit)
+        shift
+        reinit "$@"
+        ;;
+    ex | exname)
+        shift
+        meson_extract_project_name "${projectDir}/${mesonFile}"
+        ;;
+    *)
+        errorHigh "unknown subcommand ${1}"
+        help "$@"
+        exit 1
+        ;;
+    esac
+}
+
+parseOptionalArgs() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+        -d | --debug)
+            shift
+            debugLvl="$debugInfo"
+            case "$1" in
+            error)
+                debugLvl="$debugError"
+                shift
+                ;;
+            info)
+                debugLvl="$debugInfo"
+                shift
+                ;;
+            esac
+            ;;
+        -h | --help)
+            shift
+            help "$@"
+            exit 1
+            ;;
+        -i | --install)
+            shift
+            cp "$(pwd)/${scriptName}" "${HOME}/.local/bin/mm"
+            printf "${colorGreen}Info:${colorNone} mm installed at ~/.local/bin/mm"
+            exit 0
+            ;;
+        -u | --uninstall)
+            shift
+            rm -vi "${HOME}/.local/bin/mm"
+            printf "${colorGreen}Info:${colorNone} mm removed from ~/.local/bin/mm"
+            exit 0
+            ;;
+        -*)
+            errorHigh "unknown option ${1}"
+            shift
+            help "$@"
+            exit 1
+            ;;
+        *) break ;;
+
+        esac
+    done
+}
+
+main() {
+    parseOptionalArgs "$@"
+    parseSubCommand "$@"
+}
+
+declare indepenCommands=0
+case "$1" in -i | --install | -h | --help | -u | --uninstall) indepenCommands=1 ;; esac
+
+if [ ! -f "$mesonFile" ] && [ "$indepenCommands" -eq 0 ]; then
+    printf "${colorRed}Error:${colorNone} meson.build not found. "
+    printf "Not in a meson build environment\n\n"
+    printf "Exiting ...\n"
+    exit 1
+elif [ "$indepenCommands" -eq 0 ]; then
+    projectName=$(meson_extract_project_name "${projectDir}/${mesonFile}")
+fi
+
+main "$@"
