@@ -102,7 +102,12 @@ meson_extract_project_name() {
 
     esac
 
-    printf "%s" "$project_name"
+    if [ -n "$project_name" ]; then
+        printf "${colorRed}Error:${colorNone} could not find project name from meson.build\n"
+        exit 1
+    else
+        printf "%s" "$project_name"
+    fi
 }
 
 checkDebug() {
