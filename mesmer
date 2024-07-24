@@ -3,7 +3,8 @@
 
 # declare -ri true=1
 # declare -ri false=0
-declare scriptName="$(basename ${0})"
+
+declare scriptName="$(basename "${0}")"
 
 ########################################
 ##### Defaults: change as per your need
@@ -25,90 +26,6 @@ declare -i debugInfo=3
 declare colorNone='\033[0m'
 declare colorRed='\033[1;31m'
 declare colorGreen='\033[1;32m'
-
-# extracts first name of function supplied
-meson_extract_first_arg() {
-    declare file="$1"
-    declare func="$2"
-    # criteria to select single line from multiple lines selected by grep
-    declare criteria_select_line="$3"
-
-    declare all_func_lines
-    declare func_line
-    declare sed_pattern
-    declare first_arg
-
-    all_func_lines=$(grep "^[[:space:]]*${func}[[:space:]]*(" "$file")
-    func_line=$(printf "%s" "${all_func_lines}" | ${criteria_select_line})
-    sed_pattern="^[[:space:]]*${func}[[:space:]]*([[:space:]]*\([^,]*\)[[:space:]]*,.*"
-    first_arg=$(printf "%s" "${func_line}" | sed "s/${sed_pattern}/\1/")
-    printf "%s" "${first_arg}"
-}
-
-meson_extract_var_value() {
-    declare file="$1"
-    declare var="$2"
-    # criteria to select single line from multiple lines selected by grep
-    declare criteria_select_line="$3"
-
-    declare all_var_lines
-    declare var_line
-    declare sed_pattern
-    declare var_value
-
-    all_var_lines=$(grep "^[[:space:]]*${var}[[:space:]]*=.*'" "$file")
-    var_line=$(printf "%s" "${all_var_lines}" | ${criteria_select_line})
-    echo "$var_line"
-    sed_pattern="^[[:space:]]*${var}[[:space:]]*=[[:space:]]*\(.*\)[[:space:]]*$"
-    var_value=$(printf "%s" "${var_line}" | sed "s/${sed_pattern}/\1/")
-    printf "%s" "${var_value}"
-}
-
-meson_remove_single_quotes() {
-    declare query_with_quotes="$1"
-    declare query
-
-    query=$(printf "%s" "${query_with_quotes}" | sed "s/'\(.*\)'/\1/")
-    printf "%s" "${query}"
-}
-
-# Function to extract project name
-meson_extract_project_name() {
-    declare file="$1"
-    declare project_name
-
-    declare var_name
-    declare var_value
-    declare project_first_arg
-    declare executable_first_arg
-
-    # last excutable(...) line in meson.build
-    executable_first_arg=$(meson_extract_first_arg "$file" "executable" "tail -n 1")
-
-    case "$executable_first_arg" in
-
-    "'"*)
-        project_name=$(meson_remove_single_quotes "$executable_first_arg")
-        ;;
-    "meson.project_name("*")")
-        project_first_arg=$(meson_extract_first_arg "$file" "project" "head -n 1")
-        project_name=$(meson_remove_single_quotes "$project_first_arg")
-        ;;
-    *)
-        var_name="$executable_first_arg"
-        var_value=$(meson_extract_var_value "$file" "$var_name" "tail -n 1")
-        project_name=$(meson_remove_single_quotes "$var_value")
-        ;;
-
-    esac
-
-    if [ -n "$project_name" ]; then
-        printf "${colorRed}Error:${colorNone} could not find project name from meson.build\n"
-        exit 1
-    else
-        printf "%s" "$project_name"
-    fi
-}
 
 checkDebug() {
     declare command_lvl
@@ -200,43 +117,53 @@ runCmdVerbose() {
 init() {
     declare project_dir="${1:-${projectDir}}"
     declare build_dir="${2:-${buildDir}}"
+    declare build_path="${project_dir:?}/${build_dir}"
 
-    info "initialization started (${project_dir:?}/${build_dir})"
-    runCmd meson setup "${project_dir:?}/${build_dir}"
-    info "initialization finised (${project_dir:?}/${build_dir})"
+    info "initialization started ($build_path)"
+    runCmd meson setup "$build_path"
+    info "initialization finised ($build_path)"
 }
 
 build() {
     declare project_dir="${1:-${projectDir}}"
     declare build_dir="${2:-${buildDir}}"
+    declare build_path="${project_dir:?}/${build_dir}"
 
-    info "build started (${project_dir:?}/${build_dir})"
-    runCmd meson compile -C "${project_dir:?}/${build_dir}"
-    info "build finished (${project_dir:?}/${build_dir})"
+    info "build started ($build_path)"
+    runCmd meson compile -C "$build_path"
+    info "build finished ($build_path)"
 }
 
 runProject() {
     declare project_dir="${1:-${projectDir}}"
     declare build_dir="${2:-${buildDir}}"
+    declare project_name="${3:-${projectName}}"
+    declare build_path="${project_dir:?}/${build_dir}"
+    declare project_path="${build_path:?}/${project_name}"
 
-    info "running ${projectName} (${project_dir:?}/${build_dir})"
-    runCmd "${project_dir:?}/${build_dir}/${projectName}"
-    info "${projectName} run complete"
+    if [ ! -f ${project_path} ]; then
+        errorHigh "${project_name} does not exist in ${build_path}"
+    fi
+
+    info "running ${project_name} ($build_path)"
+    runCmd "$project_path"
+    info "${project_name} run complete"
 }
 
 removeBuild() {
     declare project_dir="${1:-${projectDir}}"
     declare build_dir="${2:-${buildDir}}"
+    declare build_path="${project_dir:?}/${build_dir}"
 
-    infoHigh "removing dir: ${project_dir:?}/${build_dir}"
+    infoHigh "removing dir: ${build_path}"
 
     if [ "$debugLvl" -le "$debugQuiet" ]; then
-        rm -rI "${project_dir:?}/${build_dir}"
+        rm -rI "$build_path"
     else
-        rm -rvI "${project_dir:?}/${build_dir}"
+        rm -rvI "${build_path}"
     fi
 
-    infoHigh "removed dir: ${project_dir:?}/${build_dir}"
+    infoHigh "removed dir: ${build_path}"
 }
 
 reinit() {
@@ -247,6 +174,120 @@ reinit() {
 run() {
     build "$@"
     runProject "$@"
+}
+
+# extracts first name of function supplied
+meson_extract_first_arg() {
+    declare file="$1"
+    declare func="$2"
+    # criteria to select single line from multiple lines selected by grep
+    declare criteria_select_line="$3"
+
+    declare all_func_lines
+    declare func_line
+    declare sed_pattern
+    declare first_arg
+
+    all_func_lines=$(grep -s "^[[:space:]]*${func}[[:space:]]*(" "$file")
+    func_line=$(printf "%s" "${all_func_lines}" | ${criteria_select_line})
+    sed_pattern="^[[:space:]]*${func}[[:space:]]*([[:space:]]*\([^,]*\)[[:space:]]*,.*"
+    first_arg=$(printf "%s" "${func_line}" | sed "s/${sed_pattern}/\1/")
+    printf "%s" "${first_arg}"
+}
+
+meson_extract_var_value() {
+    declare file="$1"
+    declare var="$2"
+    # criteria to select single line from multiple lines selected by grep
+    declare criteria_select_line="$3"
+
+    declare all_var_lines
+    declare var_line
+    declare sed_pattern
+    declare var_value
+
+    all_var_lines=$(grep -s "^[[:space:]]*${var}[[:space:]]*=.*'" "$file")
+    var_line=$(printf "%s" "${all_var_lines}" | ${criteria_select_line})
+    sed_pattern="^[[:space:]]*${var}[[:space:]]*=[[:space:]]*\(.*\)[[:space:]]*$"
+    var_value=$(printf "%s" "${var_line}" | sed -n "s/${sed_pattern}/\1/p")
+    printf "%s" "${var_value}"
+}
+
+meson_remove_single_quotes() {
+    declare query_with_quotes="$1"
+    declare query
+
+    query=$(printf "%s" "${query_with_quotes}" | sed -n "s/'\(.*\)'/\1/p")
+    printf "%s" "${query}"
+}
+
+# Function to extract project name
+meson_extract_project_name() {
+    declare project_dir="${1:-${projectDir}}"
+    declare meson_file="${2:-${mesonFile}}"
+    declare file_path="${project_dir:?}/${meson_file}"
+    if [ ! -f "$file_path" ]; then
+        errorHigh "${meson_file} does not exist in ${project_dir}"
+        exit 1
+    fi
+
+    declare project_name
+
+    declare var_name
+    declare var_value
+    declare project_first_arg
+    declare executable_first_arg
+
+    # last excutable(...) line in meson.build
+    executable_first_arg=$(meson_extract_first_arg "$file_path" "executable" "tail -n 1")
+
+    case "$executable_first_arg" in
+
+    "'"*)
+        project_name=$(meson_remove_single_quotes "$executable_first_arg")
+        ;;
+    "meson.project_name("*")")
+        project_first_arg=$(meson_extract_first_arg "$file_path" "project" "head -n 1")
+        project_name=$(meson_remove_single_quotes "$project_first_arg")
+        ;;
+    *)
+        var_name="$executable_first_arg"
+        var_value=$(meson_extract_var_value "$file_path" "$var_name" "tail -n 1")
+        project_name=$(meson_remove_single_quotes "$var_value")
+        ;;
+
+    esac
+
+    if [ -z "$project_name" ]; then
+        errorHigh "could not find project name from ${meson_file}"
+        exit 1
+    else
+        printf "%s" "$project_name"
+    fi
+}
+
+setProjectName() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+        -d | --debug)
+            case "$2" in
+            error | info) shift ;;
+            esac
+            shift
+            ;;
+        -*) shift ;;
+        *) break ;;
+        esac
+    done
+
+    # $1 is subcommand
+    declare project_dir="${2:-${projectDir}}"
+
+    projectName=$(meson_extract_project_name "$project_dir" "meson.build")
+}
+
+exname() {
+    printf "%s" "$projectName"
 }
 
 help() {
@@ -280,7 +321,7 @@ Options:
     -h | --help    : show this help page
 "
 
-    echo "$help_text"
+    printf "%s" "$help_text"
 }
 
 parseSubCommand() {
@@ -321,7 +362,7 @@ parseSubCommand() {
         ;;
     ex | exname)
         shift
-        meson_extract_project_name "${projectDir}/${mesonFile}"
+        exname "$@"
         ;;
     *)
         errorHigh "unknown subcommand ${1}"
@@ -356,13 +397,13 @@ parseOptionalArgs() {
         -i | --install)
             shift
             cp "$(pwd)/${scriptName}" "${HOME}/.local/bin/mm"
-            printf "${colorGreen}Info:${colorNone} mm installed at ~/.local/bin/mm"
+            infoHigh "mm installed at ~/.local/bin/mm"
             exit 0
             ;;
         -u | --uninstall)
             shift
             rm -vi "${HOME}/.local/bin/mm"
-            printf "${colorGreen}Info:${colorNone} mm removed from ~/.local/bin/mm"
+            infoHigh "mm removed from ~/.local/bin/mm"
             exit 0
             ;;
         -*)
@@ -378,20 +419,19 @@ parseOptionalArgs() {
 }
 
 main() {
+
+    declare indepenCommands=0
+    case "$1" in -i | --install | -h | --help | -u | --uninstall) indepenCommands=1 ;; esac
+
+    if [ ! -f "$mesonFile" ] && [ "$indepenCommands" -eq 0 ]; then
+        errorHigh "meson.build not found. Not in a meson build environment."
+        exit 1
+    elif [ "$indepenCommands" -eq 0 ]; then
+        setProjectName "$@"
+    fi
+
     parseOptionalArgs "$@"
     parseSubCommand "$@"
 }
-
-declare indepenCommands=0
-case "$1" in -i | --install | -h | --help | -u | --uninstall) indepenCommands=1 ;; esac
-
-if [ ! -f "$mesonFile" ] && [ "$indepenCommands" -eq 0 ]; then
-    printf "${colorRed}Error:${colorNone} meson.build not found. "
-    printf "Not in a meson build environment\n\n"
-    printf "Exiting ...\n"
-    exit 1
-elif [ "$indepenCommands" -eq 0 ]; then
-    projectName=$(meson_extract_project_name "${projectDir}/${mesonFile}")
-fi
 
 main "$@"
