@@ -4,7 +4,8 @@
 # declare -ri true=1
 # declare -ri false=0
 
-declare scriptName="$(basename "${0}")"
+declare scriptName
+scriptName="$(basename "${0}")"
 
 ########################################
 ##### Defaults: change as per your need
@@ -120,8 +121,12 @@ init() {
     declare build_path="${project_dir:?}/${build_dir}"
 
     info "initialization started ($build_path)"
-    runCmd meson setup "$build_path"
+    if ! runCmd meson setup "$build_path" "$project_dir"; then
+        errorHigh "initialization failed"
+        return 1
+    fi
     info "initialization finised ($build_path)"
+    return 0
 }
 
 build() {
@@ -130,8 +135,12 @@ build() {
     declare build_path="${project_dir:?}/${build_dir}"
 
     info "build started ($build_path)"
-    runCmd meson compile -C "$build_path"
+    if ! runCmd meson compile -C "$build_path"; then
+        errorHigh "build failed"
+        return 1
+    fi
     info "build finished ($build_path)"
+    return 0
 }
 
 runProject() {
@@ -141,13 +150,17 @@ runProject() {
     declare build_path="${project_dir:?}/${build_dir}"
     declare project_path="${build_path:?}/${project_name}"
 
-    if [ ! -f ${project_path} ]; then
+    if [ ! -f "${project_path}" ]; then
         errorHigh "${project_name} does not exist in ${build_path}"
     fi
 
     info "running ${project_name} ($build_path)"
-    runCmd "$project_path"
+    if ! runCmd "$project_path"; then
+        errorHigh "run failed"
+        return 1
+    fi
     info "${project_name} run complete"
+    return 0
 }
 
 removeBuild() {
@@ -155,25 +168,31 @@ removeBuild() {
     declare build_dir="${2:-${buildDir}}"
     declare build_path="${project_dir:?}/${build_dir}"
 
-    infoHigh "removing dir: ${build_path}"
-
+    declare args
     if [ "$debugLvl" -le "$debugQuiet" ]; then
-        rm -rI "$build_path"
+        args="-rI"
     else
-        rm -rvI "${build_path}"
+        args="-rvI"
     fi
 
-    infoHigh "removed dir: ${build_path}"
+    infoHigh "removing dir: ${build_path}"
+
+    if ! rm "$args" "$build_path"; then
+        errorHigh "removal failed"
+        return 1
+    fi
+
+    return 0
 }
 
 reinit() {
-    removeBuild "$@"
-    init "$@"
+    removeBuild "$@" && init "$@"
+    return "$?"
 }
 
 run() {
-    build "$@"
-    runProject "$@"
+    build "$@" && runProject "$@"
+    return "$?"
 }
 
 # extracts first name of function supplied
