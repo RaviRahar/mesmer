@@ -329,12 +329,17 @@ Subcommands:
 
 Options:
 
-    -d | --debug   : show debug info, by this flag ${scriptName} is quiet
-        ${scriptName} -d [buildDirName]
+    -d | --debug   : set debug level
+        ${scriptName} -d e [buildDirName]
+                    or
         ${scriptName} -d error [buildDirName]
 
-        available : info, error
-        default   : info 
+        available : info (i), error (e), quiet (q)
+        default   : info with -d flag and no arguments; quiet without -d flag
+                    i.e.
+
+                    quiet: ${scriptName}
+                    info: ${scriptName} -d [buildDirName]
 
     -i | --install : install the script in $HOME/.local/bin
     -h | --help    : show this help page
