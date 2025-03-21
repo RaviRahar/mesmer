@@ -398,12 +398,16 @@ parseOptionalArgs() {
             shift
             debugLvl="$debugInfo"
             case "$1" in
-            error)
+            error | e)
                 debugLvl="$debugError"
                 shift
                 ;;
-            info)
+            info | i)
                 debugLvl="$debugInfo"
+                shift
+                ;;
+            quiet | q)
+                debugLvl="$debugQuiet"
                 shift
                 ;;
             esac
