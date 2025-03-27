@@ -35,16 +35,16 @@ $ ./mesmer -i
         Options:
 
             -d | --debug   : set debug level
-                mesmer -d e [buildDirName]
+                mesmer -d e [subcommand]
                             or
-                mesmer -d error [buildDirName]
+                mesmer -d error [subcommand]
 
                 available : info (i), error (e), quiet (q)
                 default   : info with -d flag and no arguments; quiet without -d flag
                             i.e.
 
-                            quiet: mesmer [buildDirName]
-                            info: mesmer -d [buildDirName]
+                            quiet: mesmer [subcommand]
+                            info: mesmer -d [subcommand]
 
             -i | --install : install the script in $HOME/.local/bin
             -h | --help    : show this help page

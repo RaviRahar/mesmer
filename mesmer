@@ -330,16 +330,16 @@ Subcommands:
 Options:
 
     -d | --debug   : set debug level
-        ${scriptName} -d e [buildDirName]
+        ${scriptName} -d e [subcommand]
                     or
-        ${scriptName} -d error [buildDirName]
+        ${scriptName} -d error [subcommand]
 
         available : info (i), error (e), quiet (q)
         default   : info with -d flag and no arguments; quiet without -d flag
                     i.e.
 
                     quiet: ${scriptName}
-                    info: ${scriptName} -d [buildDirName]
+                    info: ${scriptName} -d [subcommand]
 
     -i | --install : install the script in $HOME/.local/bin
     -h | --help    : show this help page
@@ -451,6 +451,7 @@ main() {
     declare indepenCommands=0
     case "$1" in -i | --install | -h | --help | -u | --uninstall) indepenCommands=1 ;; esac
 
+    #FIX: unable to run outside projectDir when no mesonFile in pwd
     if [ ! -f "$mesonFile" ] && [ "$indepenCommands" -eq 0 ]; then
         errorHigh "meson.build not found. Not in a meson build environment."
         exit 1
